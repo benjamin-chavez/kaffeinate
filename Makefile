@@ -1,8 +1,9 @@
 APP_BUNDLE := dist/Kaffeinate.app
+RELEASE_DIR ?= dist
 INSTALL_DIR ?= $(HOME)/Applications
 BIN_DIR ?= $(HOME)/.local/bin
 
-.PHONY: build install test vet
+.PHONY: build release install test vet
 
 build:
 	@test "$$(uname -s)" = Darwin || { echo "The application currently builds on macOS."; exit 1; }
@@ -13,6 +14,9 @@ build:
 	cp packaging/macos/Info.plist "$(APP_BUNDLE)/Contents/Info.plist"
 	go run ./tools/icons "$(APP_BUNDLE)/Contents/Resources/Kaffeinate.icns"
 	plutil -lint "$(APP_BUNDLE)/Contents/Info.plist"
+
+release:
+	bash scripts/release.sh "$(RELEASE_DIR)"
 
 install: build
 	@case "$(INSTALL_DIR)" in /*) ;; *) echo "INSTALL_DIR must be an absolute path."; exit 1;; esac
