@@ -7,8 +7,9 @@ if [[ $(uname -s) != Darwin ]]; then
 fi
 
 release_dir=${1:-dist}
-archive_name=Kaffeinate-macOS-universal.zip
+image_name=Kaffeinate-macOS-universal.dmg
 mkdir -p "$release_dir"
+bash scripts/disk-image.sh "$release_dir/$image_name"
 staging_dir=$(mktemp -d "$release_dir/.release.XXXXXX")
 trap 'rm -rf "$staging_dir"' EXIT
 
@@ -49,10 +50,11 @@ chmod 755 "$app_executable" "$cli_executable"
 /usr/bin/codesign --verify --deep --strict "$app_bundle"
 /usr/bin/plutil -lint "$app_bundle/Contents/Info.plist"
 
-/usr/bin/ditto -c -k --sequesterRsrc --keepParent "$app_bundle" "$staging_dir/$archive_name"
-archive_digest=$(/usr/bin/shasum -a 256 "$staging_dir/$archive_name")
-printf '%s  %s\n' "${archive_digest%% *}" "$archive_name" >"$staging_dir/SHA256SUMS.txt"
+bash scripts/create-dmg.sh "$app_bundle" "$staging_dir/$image_name"
+image_digest=$(/usr/bin/shasum -a 256 "$staging_dir/$image_name")
+printf '%s  %s\n' "${image_digest%% *}" "$image_name" >"$staging_dir/SHA256SUMS.txt"
 
-mv -f "$staging_dir/$archive_name" "$release_dir/$archive_name"
+bash scripts/disk-image.sh "$release_dir/$image_name"
+mv -f "$staging_dir/$image_name" "$release_dir/$image_name"
 mv -f "$staging_dir/SHA256SUMS.txt" "$release_dir/SHA256SUMS.txt"
-echo "Built $release_dir/$archive_name and $release_dir/SHA256SUMS.txt"
+echo "Built $release_dir/$image_name and $release_dir/SHA256SUMS.txt"

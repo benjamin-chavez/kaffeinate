@@ -1,7 +1,6 @@
 package integration_test
 
 import (
-	"archive/zip"
 	"crypto/sha256"
 	"debug/macho"
 	"encoding/hex"
@@ -9,7 +8,6 @@ import (
 	"net"
 	"os"
 	"os/exec"
-	"path"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -21,59 +19,42 @@ import (
 	"kaffeinate/internal/control"
 )
 
-func TestReleaseArchive(t *testing.T) {
+func TestReleaseDiskImage(t *testing.T) {
 	releaseDirectory := os.Getenv("KAFFEINATE_TEST_RELEASE_DIR")
 	if releaseDirectory == "" {
 		t.Skip("set KAFFEINATE_TEST_RELEASE_DIR to check a universal release")
 	}
-	archiveName := "Kaffeinate-macOS-universal.zip"
-	archivePath := filepath.Join(releaseDirectory, archiveName)
-	archiveFile, err := os.Open(archivePath)
+	imageName := "Kaffeinate-macOS-universal.dmg"
+	imagePath := filepath.Join(releaseDirectory, imageName)
+	imageFile, err := os.Open(imagePath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer archiveFile.Close()
-	archiveHash := sha256.New()
-	if _, err := io.Copy(archiveHash, archiveFile); err != nil {
+	defer imageFile.Close()
+	imageHash := sha256.New()
+	if _, err := io.Copy(imageHash, imageFile); err != nil {
 		t.Fatal(err)
 	}
 	checksumBytes, err := os.ReadFile(filepath.Join(releaseDirectory, "SHA256SUMS.txt"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !t.Run("when downloaded, its checksum identifies the complete archive", func(t *testing.T) {
+	if !t.Run("when downloaded, its checksum identifies the complete image", func(t *testing.T) {
 		checksumFields := strings.Fields(string(checksumBytes))
-		if len(checksumFields) != 2 || checksumFields[0] != hex.EncodeToString(archiveHash.Sum(nil)) || checksumFields[1] != archiveName {
-			t.Fatalf("checksum file does not identify this archive: %s", checksumBytes)
+		if len(checksumFields) != 2 || checksumFields[0] != hex.EncodeToString(imageHash.Sum(nil)) || checksumFields[1] != imageName {
+			t.Fatalf("checksum file does not identify this image: %s", checksumBytes)
 		}
 	}) {
 		return
 	}
-	archive, err := zip.OpenReader(archivePath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer archive.Close()
-	if !t.Run("when unpacked, contains only the app and macOS metadata", func(t *testing.T) {
-		entryNames := make(map[string]bool)
-		for _, entry := range archive.File {
-			entryName := path.Clean(entry.Name)
-			if entryNames[entryName] {
-				t.Fatalf("duplicate archive entry: %s", entry.Name)
-			}
-			entryNames[entryName] = true
-			insideApp := entryName == "Kaffeinate.app" || strings.HasPrefix(entryName, "Kaffeinate.app/")
-			macMetadata := entryName == "__MACOSX" || strings.HasPrefix(entryName, "__MACOSX/")
-			if !insideApp && !macMetadata || entry.Mode()&os.ModeSymlink != 0 {
-				t.Fatalf("unexpected archive entry: %s", entry.Name)
-			}
-		}
+	installationDirectory := filepath.Join(t.TempDir(), "download with spaces")
+	bundlePath := filepath.Join(installationDirectory, "Kaffeinate.app")
+	if !t.Run("when mounted, contains a drag installer and copies an independent app", func(t *testing.T) {
+		releaseCommand(t, "/usr/bin/env", "PATH=/usr/bin:/bin:/usr/sbin:/sbin", "/bin/bash",
+			"../scripts/copy-dmg-app.sh", imagePath, bundlePath)
 	}) {
 		return
 	}
-	extractionDirectory := filepath.Join(t.TempDir(), "download with spaces")
-	releaseCommand(t, "/usr/bin/ditto", "-x", "-k", archivePath, extractionDirectory)
-	bundlePath := filepath.Join(extractionDirectory, "Kaffeinate.app")
 	plistPath := filepath.Join(bundlePath, "Contents", "Info.plist")
 	minimumOS := plistValue(t, plistPath, "LSMinimumSystemVersion")
 	t.Run("when installed, retains its version and menu-only metadata", func(t *testing.T) {
@@ -92,7 +73,7 @@ func TestReleaseArchive(t *testing.T) {
 		{"app", "Contents/MacOS/Kaffeinate"},
 		{"CLI", "Contents/Resources/bin/kaffeinate"},
 	} {
-		t.Run("when extracted, the "+executable.name+" supports both Mac architectures", func(t *testing.T) {
+		t.Run("when copied, the "+executable.name+" supports both Mac architectures", func(t *testing.T) {
 			executablePath := filepath.Join(bundlePath, executable.relativePath)
 			info, err := os.Stat(executablePath)
 			if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0111 == 0 {
@@ -117,7 +98,7 @@ func TestReleaseArchive(t *testing.T) {
 			releaseCommand(t, "/usr/bin/codesign", "--verify", "--strict", executablePath)
 		})
 	}
-	t.Run("when extracted, its bundle signature remains valid", func(t *testing.T) {
+	t.Run("when copied, its bundle signature remains valid", func(t *testing.T) {
 		releaseCommand(t, "/usr/bin/codesign", "--verify", "--deep", "--strict", bundlePath)
 	})
 	cliPath := filepath.Join(bundlePath, "Contents", "Resources", "bin", "kaffeinate")
@@ -125,7 +106,7 @@ func TestReleaseArchive(t *testing.T) {
 		t.Run("when run as "+architecture+", the CLI needs no developer tools", func(t *testing.T) {
 			requireArchitecture(t, architecture)
 			command := exec.Command("/usr/bin/arch", "-"+architecture, cliPath, "-h")
-			command.Dir = extractionDirectory
+			command.Dir = installationDirectory
 			command.Env = []string{"PATH=/usr/bin:/bin:/usr/sbin:/sbin", "HOME=" + os.Getenv("HOME")}
 			output, err := command.CombinedOutput()
 			if err != nil || !strings.Contains(string(output), "Usage: kaffeinate") {

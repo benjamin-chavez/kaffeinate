@@ -13,7 +13,7 @@ build:
 release:
 	bash scripts/release.sh "$(RELEASE_DIR)"
 
-# Build and verify the release archive and extracted app.
+# Build and verify the disk image and installed app.
 release-check:
 	bash scripts/release-workflow.sh check "$(RELEASE_DIR)"
 

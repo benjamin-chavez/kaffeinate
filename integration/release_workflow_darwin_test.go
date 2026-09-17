@@ -21,7 +21,7 @@ func TestReleaseWorkflowCheck(t *testing.T) {
 			if !strings.Contains(output, "Release checks passed") {
 				t.Fatalf("missing verification result: %s", output)
 			}
-			if _, err := os.Stat(filepath.Join(fixture.releaseDirectory, "Kaffeinate-macOS-universal.zip")); err != nil {
+			if _, err := os.Stat(filepath.Join(fixture.releaseDirectory, "Kaffeinate-macOS-universal.dmg")); err != nil {
 				t.Fatal(err)
 			}
 			commandLog, err := os.ReadFile(fixture.commandLogPath)
@@ -48,10 +48,27 @@ func TestReleaseWorkflowDraft(t *testing.T) {
 		t.Fatal(err)
 	}
 	draftArguments := strings.Split(strings.TrimSuffix(string(argumentBytes), "\x00"), "\x00")
-	for _, argument := range []string{"v1.2.3", "--draft", filepath.Join(fixture.releaseDirectory, "Kaffeinate-macOS-universal.zip"), filepath.Join(fixture.releaseDirectory, "SHA256SUMS.txt")} {
+	for _, argument := range []string{"v1.2.3", "--draft", filepath.Join(fixture.releaseDirectory, "Kaffeinate-macOS-universal.dmg"), filepath.Join(fixture.releaseDirectory, "SHA256SUMS.txt")} {
 		if !slices.Contains(draftArguments, argument) {
 			t.Errorf("draft is missing %q: %v", argument, draftArguments)
 		}
+	}
+	var uploadedAssets []string
+	for argumentIndex := 3; argumentIndex < len(draftArguments); argumentIndex++ {
+		switch draftArguments[argumentIndex] {
+		case "--repo", "--target", "--title", "--notes":
+			argumentIndex++
+		case "--draft", "--generate-notes":
+		default:
+			uploadedAssets = append(uploadedAssets, draftArguments[argumentIndex])
+		}
+	}
+	slices.Sort(uploadedAssets)
+	if !slices.Equal(uploadedAssets, []string{filepath.Join(fixture.releaseDirectory, "Kaffeinate-macOS-universal.dmg"), filepath.Join(fixture.releaseDirectory, "SHA256SUMS.txt")}) {
+		t.Fatalf("unexpected uploaded assets: %v", uploadedAssets)
+	}
+	if _, err := os.Stat(filepath.Join(fixture.releaseDirectory, "Kaffeinate-macOS-universal.zip")); err != nil {
+		t.Fatalf("existing local ZIP should remain available: %v", err)
 	}
 	for flag, value := range map[string]string{"--target": releaseCommit, "--repo": "release-tests/kaffeinate"} {
 		argumentIndex := slices.Index(draftArguments, flag)
@@ -80,6 +97,8 @@ func TestReleaseWorkflowStopsBeforeUpload(t *testing.T) {
 		{"failed build", "RELEASE_TEST_RESULT=build", "build failed"},
 		{"failed tests", "RELEASE_TEST_RESULT=unit", "unit tests failed"},
 		{"failed vet", "RELEASE_TEST_RESULT=vet", "vet failed"},
+		{"incorrect checksum", "RELEASE_TEST_RESULT=checksum", "checksum does not match"},
+		{"failed image copy", "DMG_TEST_RESULT=copy", "copy failed"},
 		{"failed app checks", "RELEASE_TEST_RESULT=integration", "app checks failed"},
 		{"skipped app checks", "RELEASE_TEST_RESULT=skip", "required integration check was skipped"},
 		{"source changes during checks", "RELEASE_TEST_RESULT=changed", "Commit and merge your changes"},
@@ -95,6 +114,33 @@ func TestReleaseWorkflowStopsBeforeUpload(t *testing.T) {
 			}
 			fixture.requireTemporaryCleanup(t)
 		})
+	}
+}
+
+func TestReleaseWorkflowUploadFailure(t *testing.T) {
+	fixture := newReleaseWorkflowFixture(t)
+	output, err := fixture.run("draft", "RELEASE_TEST_RESULT=upload")
+	if err == nil || !strings.Contains(output, "upload failed") || strings.Contains(output, "Publish when ready") {
+		t.Fatalf("wanted upload failure without publication instructions: %v: %s", err, output)
+	}
+	fixture.requireTemporaryCleanup(t)
+}
+
+func TestReleaseWorkflowRetainsBusyImage(t *testing.T) {
+	fixture := newReleaseWorkflowFixture(t)
+	output, err := fixture.run("draft", "DMG_TEST_RESULT=detach")
+	if err == nil || !strings.Contains(output, "Retained image workspace") {
+		t.Fatalf("busy image should fail with recovery instructions: %v: %s", err, output)
+	}
+	mountBytes, err := os.ReadFile(filepath.Join(fixture.diskStateDirectory, "mounted"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(string(mountBytes)); err != nil {
+		t.Fatalf("workflow cleanup removed an active mount: %v", err)
+	}
+	if _, err := os.Stat(fixture.draftArgumentsPath); !os.IsNotExist(err) {
+		t.Fatalf("busy image should prevent upload: %v", err)
 	}
 }
 
@@ -121,6 +167,7 @@ type releaseWorkflowFixture struct {
 	temporaryDirectory  string
 	commandLogPath      string
 	draftArgumentsPath  string
+	diskStateDirectory  string
 	environment         []string
 }
 
@@ -134,25 +181,33 @@ func newReleaseWorkflowFixture(t *testing.T) releaseWorkflowFixture {
 		temporaryDirectory:  filepath.Join(fixtureDirectory, "temporary files"),
 		commandLogPath:      filepath.Join(fixtureDirectory, "commands.log"),
 		draftArgumentsPath:  filepath.Join(fixtureDirectory, "draft-arguments"),
+		diskStateDirectory:  filepath.Join(fixtureDirectory, "disk state"),
 	}
-	for _, directory := range []string{toolDirectory, fixture.temporaryDirectory} {
+	for _, directory := range []string{toolDirectory, fixture.temporaryDirectory, fixture.diskStateDirectory, fixture.releaseDirectory} {
 		if err := os.MkdirAll(directory, 0700); err != nil {
 			t.Fatal(err)
 		}
 	}
+	if err := os.WriteFile(filepath.Join(fixture.releaseDirectory, "Kaffeinate-macOS-universal.zip"), []byte("previous release"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writeDiskImageFakes(t, toolDirectory)
 	fixtureFiles := map[string]string{
 		"scripts/release.sh": `#!/bin/bash
 set -euo pipefail
 echo build >> "$RELEASE_TEST_COMMAND_LOG"
 if [[ ${RELEASE_TEST_RESULT:-} == build ]]; then echo 'build failed'; exit 1; fi
 mkdir -p "$1"
-bundle_directory=$(mktemp -d "$TMPDIR/bundle.XXXXXX")
-trap 'rm -rf "$bundle_directory"' EXIT
-mkdir -p "$bundle_directory/Kaffeinate.app/Contents"
+bundle_directory="$DMG_TEST_STATE/payload"
+mkdir -p "$bundle_directory/Kaffeinate.app/Contents" "$bundle_directory/.background"
 cp packaging/macos/Info.plist "$bundle_directory/Kaffeinate.app/Contents/Info.plist"
-ditto -c -k --keepParent "$bundle_directory/Kaffeinate.app" "$1/Kaffeinate-macOS-universal.zip"
+cp packaging/macos/dmg-background.png "$bundle_directory/.background/background.png"
+ln -sfn /Applications "$bundle_directory/Applications"
+printf layout > "$bundle_directory/.DS_Store"
+printf image > "$1/Kaffeinate-macOS-universal.dmg"
 cd "$1"
-shasum -a 256 Kaffeinate-macOS-universal.zip > SHA256SUMS.txt
+shasum -a 256 Kaffeinate-macOS-universal.dmg > SHA256SUMS.txt
+if [[ ${RELEASE_TEST_RESULT:-} == checksum ]]; then printf invalid > SHA256SUMS.txt; fi
 `,
 		"packaging/macos/Info.plist": `<plist version="1.0"><dict>
 <key>CFBundleShortVersionString</key><string>1.2.3</string>
@@ -160,7 +215,12 @@ shasum -a 256 Kaffeinate-macOS-universal.zip > SHA256SUMS.txt
 </dict></plist>
 `,
 	}
-	for _, scriptName := range []string{"release-workflow.sh", "test.sh", "vet.sh"} {
+	backgroundBytes, err := os.ReadFile("../packaging/macos/dmg-background.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixtureFiles["packaging/macos/dmg-background.png"] = string(backgroundBytes)
+	for _, scriptName := range []string{"release-workflow.sh", "copy-dmg-app.sh", "disk-image.sh", "test.sh", "vet.sh"} {
 		scriptBytes, err := os.ReadFile(filepath.Join("..", "scripts", scriptName))
 		if err != nil {
 			t.Fatal(err)
@@ -187,8 +247,9 @@ esac
 if [[ $1 == vet ]]; then
     if [[ ${RELEASE_TEST_RESULT:-} == vet ]]; then echo 'vet failed'; exit 1; fi
 elif [[ $* == *./integration* ]]; then
-    test -f "$KAFFEINATE_TEST_RELEASE_DIR/Kaffeinate-macOS-universal.zip"
+    test -f "$KAFFEINATE_TEST_RELEASE_DIR/Kaffeinate-macOS-universal.dmg"
     test -f "$KAFFEINATE_TEST_APP_BUNDLE/Contents/Info.plist"
+    test ! -f "$DMG_TEST_STATE/mounted"
     case ${RELEASE_TEST_RESULT:-} in
     integration) echo 'app checks failed'; exit 1 ;;
     skip) echo '--- SKIP: TestPackagedCLI (0.00s)'; exit 0 ;;
@@ -217,6 +278,7 @@ case "$1 $2" in
 'release create')
     test -f "$4"
     test -f "$5"
+    if [[ ${RELEASE_TEST_RESULT:-} == upload ]]; then echo 'upload failed'; exit 1; fi
     printf '%s\0' "$@" > "$RELEASE_TEST_DRAFT_ARGUMENTS" ;;
 *) echo "unexpected GitHub command: $*" >&2; exit 1 ;;
 esac
@@ -231,6 +293,7 @@ esac
 		"TMPDIR="+fixture.temporaryDirectory,
 		"RELEASE_TEST_COMMAND_LOG="+fixture.commandLogPath,
 		"RELEASE_TEST_DRAFT_ARGUMENTS="+fixture.draftArgumentsPath,
+		"DMG_TEST_STATE="+fixture.diskStateDirectory,
 	)
 	fixture.git(t, "init", "--quiet", "--initial-branch=main")
 	fixture.git(t, "add", ".")
@@ -265,8 +328,11 @@ func (fixture releaseWorkflowFixture) requireTemporaryCleanup(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, entry := range entries {
-		if strings.HasPrefix(entry.Name(), "kaffeinate release.") {
+		if strings.HasPrefix(entry.Name(), "kaffeinate release.") || strings.HasPrefix(entry.Name(), "kaffeinate image.") {
 			t.Errorf("temporary release files were not cleaned up: %s", entry.Name())
 		}
+	}
+	if _, err := os.Stat(filepath.Join(fixture.diskStateDirectory, "mounted")); !os.IsNotExist(err) {
+		t.Fatalf("verification image remains attached: %v", err)
 	}
 }

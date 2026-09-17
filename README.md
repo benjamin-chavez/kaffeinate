@@ -4,11 +4,9 @@ Keep your Mac awake from the menu bar or terminal. Commands run in the backgroun
 
 ## Install
 
-The download will be available after the first release is published.
-
-1. [Download Kaffeinate for macOS](https://github.com/benjamin-chavez/kaffeinate/releases/latest/download/Kaffeinate-macOS-universal.zip).
-2. Extract the ZIP if needed, then move **Kaffeinate.app** into **/Applications**.
-3. Open the app. macOS blocks the first launch because this release is unsigned and unnotarized.
+1. [Download Kaffeinate for macOS](https://github.com/benjamin-chavez/kaffeinate/releases/latest).
+2. Double-click the DMG and drag **Kaffeinate.app** onto **Applications**. The current `v0.1.0` release is a ZIP; extract it and move **Kaffeinate.app** into **/Applications** instead. DMG downloads start with the next release.
+3. Eject the disk image if mounted, then open Kaffeinate from **Applications**. macOS blocks the first launch because this release lacks Developer ID signing and notarization.
 4. Open **System Settings → Privacy & Security**, scroll down, and click **Open Anyway**.
 5. Open the app again and click **Open**.
 

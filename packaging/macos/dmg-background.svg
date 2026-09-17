@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="380" viewBox="0 0 600 380">
+  <rect width="600" height="380" fill="#edf3f5"/>
+  <text x="300" y="64" text-anchor="middle" font-family="Avenir Next, Helvetica, sans-serif" font-size="30" font-weight="600" fill="#243d4a">Kaffeinate</text>
+  <text x="300" y="96" text-anchor="middle" font-family="Helvetica, sans-serif" font-size="16" fill="#4e6773">Drag to Applications</text>
+  <path d="M246 190 H354 M342 178 L354 190 L342 202" fill="none" stroke="#6e4d37" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="300" y="310" text-anchor="middle" font-family="Helvetica, sans-serif" font-size="13" fill="#4e6773">After copying, eject this disk and open Kaffeinate.</text>
+</svg>

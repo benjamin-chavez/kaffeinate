@@ -66,15 +66,19 @@ unset KAFFEINATE_TEST_RELEASE_DIR KAFFEINATE_TEST_APP_BUNDLE
 echo "Building the universal macOS app."
 bash scripts/release.sh "$release_directory"
 release_directory=$(cd "$release_directory" && pwd)
-archive_path="$release_directory/Kaffeinate-macOS-universal.zip"
+image_path="$release_directory/Kaffeinate-macOS-universal.dmg"
 checksum_path="$release_directory/SHA256SUMS.txt"
 
 echo "Running tests and go vet."
 bash scripts/test.sh -count=1
 bash scripts/vet.sh
 
-echo "Checking the archive and extracted app."
-ditto -x -k "$archive_path" "$verification_directory"
+echo "Checking the disk image and installed app."
+image_digest=$(shasum -a 256 "$image_path")
+if [[ $(<"$checksum_path") != "${image_digest%% *}  Kaffeinate-macOS-universal.dmg" ]]; then
+  fail_release "The DMG checksum does not match SHA256SUMS.txt."
+fi
+bash scripts/copy-dmg-app.sh "$image_path" "$verification_directory/Kaffeinate.app"
 require_stopped_app
 KAFFEINATE_TEST_RELEASE_DIR="$release_directory" \
   KAFFEINATE_TEST_APP_BUNDLE="$verification_directory/Kaffeinate.app" \
@@ -82,7 +86,7 @@ KAFFEINATE_TEST_RELEASE_DIR="$release_directory" \
 if grep -q '^--- SKIP:' "$verification_directory/integration.log"; then
   fail_release "A required integration check was skipped. Resolve the reported reason before creating a release draft."
 fi
-echo "Release checks passed for $archive_path."
+echo "Release checks passed for $image_path."
 
 if [[ "$release_action" == draft ]]; then
   require_clean_checkout
@@ -90,7 +94,7 @@ if [[ "$release_action" == draft ]]; then
     fail_release "The checked-out commit changed during verification. Run the release workflow again."
   fi
   require_unused_release_tag
-  gh release create "$release_tag" "$archive_path" "$checksum_path" \
+  gh release create "$release_tag" "$image_path" "$checksum_path" \
     --repo "$github_repository" --target "$release_commit" --draft \
     --title "Kaffeinate $release_tag" --generate-notes \
     --notes "Universal macOS app for Apple Silicon and Intel. No Go required. This build lacks Developer ID signing and notarization; see the README for Open Anyway instructions."
