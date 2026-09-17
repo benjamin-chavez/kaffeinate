@@ -7,24 +7,30 @@ install_directory=${2:-$HOME/Applications}
 bin_directory=${3:-$HOME/.local/bin}
 
 case "$install_directory" in
-    /*) ;;
-    *) echo "INSTALL_DIR must be an absolute path." >&2; exit 1 ;;
+/*) ;;
+*)
+  echo "INSTALL_DIR must be an absolute path." >&2
+  exit 1
+  ;;
 esac
 case "$bin_directory" in
-    /*) ;;
-    *) echo "BIN_DIR must be an absolute path." >&2; exit 1 ;;
+/*) ;;
+*)
+  echo "BIN_DIR must be an absolute path." >&2
+  exit 1
+  ;;
 esac
 
 installed_app_bundle="$install_directory/Kaffeinate.app"
 if [[ -e "$installed_app_bundle" || -L "$installed_app_bundle" ]]; then
-    if [[ -L "$installed_app_bundle" ]] || [[ $(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$installed_app_bundle/Contents/Info.plist") != local.kaffeinate.app ]]; then
-        echo "The destination is not a Kaffeinate application bundle." >&2
-        exit 1
-    fi
+  if [[ -L "$installed_app_bundle" ]] || [[ $(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$installed_app_bundle/Contents/Info.plist") != local.kaffeinate.app ]]; then
+    echo "The destination is not a Kaffeinate application bundle." >&2
+    exit 1
+  fi
 fi
 if [[ -e "$bin_directory/kaffeinate" && ! -L "$bin_directory/kaffeinate" ]]; then
-    echo "A non-symlink kaffeinate command already exists in BIN_DIR." >&2
-    exit 1
+  echo "A non-symlink kaffeinate command already exists in BIN_DIR." >&2
+  exit 1
 fi
 
 mkdir -p "$install_directory" "$bin_directory"

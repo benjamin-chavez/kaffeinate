@@ -73,4 +73,6 @@ make vet
 
 `make install` builds the app and installs it in `~/Applications`. `make build` only creates `dist/Kaffeinate.app`.
 
+Run `make format` to format Go files with `gofmt` and shell scripts with `shfmt`, using two spaces for shell indentation. Install `shfmt` first with `brew install shfmt`. The command includes tracked and new source files while respecting `.gitignore` for new files.
+
 See the [release guide](docs/releases.md) for packaging and publication, or the [implementation plan](docs/plans/README.md) for architecture. Linux support is planned.

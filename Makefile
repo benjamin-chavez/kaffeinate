@@ -3,7 +3,7 @@ RELEASE_DIR ?= dist
 INSTALL_DIR ?= $(HOME)/Applications
 BIN_DIR ?= $(HOME)/.local/bin
 
-.PHONY: build release release-check release-draft install test vet
+.PHONY: build release release-check release-draft install test vet format
 
 # Build the app bundle for the current Mac architecture.
 build:
@@ -32,3 +32,7 @@ test:
 # Check the Go code for likely mistakes.
 vet:
 	bash scripts/vet.sh
+
+# Format Go and shell source files throughout the repository.
+format:
+	bash scripts/format.sh

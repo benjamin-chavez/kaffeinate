@@ -36,11 +36,11 @@ func generate() error {
 	iconFile.WriteString("icns")
 	_ = binary.Write(&iconFile, binary.BigEndian, uint32(chunks.Len()+8))
 	iconFile.Write(chunks.Bytes())
-	if err := os.WriteFile(os.Args[1], iconFile.Bytes(), 0644); err != nil {
+	if err := os.WriteFile(os.Args[1], iconFile.Bytes(), 0o644); err != nil {
 		return err
 	}
 	if len(os.Args) == 3 {
-		return os.WriteFile(os.Args[2], artwork.AppPNG(512), 0644)
+		return os.WriteFile(os.Args[2], artwork.AppPNG(512), 0o644)
 	}
 	return nil
 }
