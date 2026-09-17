@@ -2,8 +2,8 @@
 set -euo pipefail
 
 if [[ $(uname -s) != Darwin ]]; then
-    echo "The application currently builds on macOS." >&2
-    exit 1
+  echo "The application currently builds on macOS." >&2
+  exit 1
 fi
 
 cd "$(dirname "$0")/.."

@@ -2,8 +2,8 @@
 set -euo pipefail
 
 if [[ $(uname -s) != Darwin ]]; then
-    echo "The macOS release must be built on macOS." >&2
-    exit 1
+  echo "The macOS release must be built on macOS." >&2
+  exit 1
 fi
 
 release_dir=${1:-dist}
@@ -24,16 +24,16 @@ export CGO_CFLAGS="-O2 -g -mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET"
 export CGO_LDFLAGS="-mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET"
 
 for architecture in arm64 amd64; do
-    # Separate directories avoid executable-name collisions on case-insensitive disks.
-    mkdir -p "$staging_dir/$architecture/app" "$staging_dir/$architecture/cli"
-    GOOS=darwin GOARCH="$architecture" CGO_ENABLED=1 go build -trimpath \
-        -o "$staging_dir/$architecture/app/Kaffeinate" ./cmd/kaffeinate-app
-    GOOS=darwin GOARCH="$architecture" CGO_ENABLED=0 go build -trimpath \
-        -o "$staging_dir/$architecture/cli/kaffeinate" ./cmd/kaffeinate
+  # Separate directories avoid executable-name collisions on case-insensitive disks.
+  mkdir -p "$staging_dir/$architecture/app" "$staging_dir/$architecture/cli"
+  GOOS=darwin GOARCH="$architecture" CGO_ENABLED=1 go build -trimpath \
+    -o "$staging_dir/$architecture/app/Kaffeinate" ./cmd/kaffeinate-app
+  GOOS=darwin GOARCH="$architecture" CGO_ENABLED=0 go build -trimpath \
+    -o "$staging_dir/$architecture/cli/kaffeinate" ./cmd/kaffeinate
 done
 
 GOOS=darwin GOARCH="$(go env GOHOSTARCH)" CGO_ENABLED=0 go run ./tools/icons \
-    "$app_bundle/Contents/Resources/Kaffeinate.icns"
+  "$app_bundle/Contents/Resources/Kaffeinate.icns"
 
 /usr/bin/lipo -create "$staging_dir/arm64/app/Kaffeinate" "$staging_dir/amd64/app/Kaffeinate" -output "$app_executable"
 /usr/bin/lipo -create "$staging_dir/arm64/cli/kaffeinate" "$staging_dir/amd64/cli/kaffeinate" -output "$cli_executable"
@@ -51,7 +51,7 @@ chmod 755 "$app_executable" "$cli_executable"
 
 /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$app_bundle" "$staging_dir/$archive_name"
 archive_digest=$(/usr/bin/shasum -a 256 "$staging_dir/$archive_name")
-printf '%s  %s\n' "${archive_digest%% *}" "$archive_name" > "$staging_dir/SHA256SUMS.txt"
+printf '%s  %s\n' "${archive_digest%% *}" "$archive_name" >"$staging_dir/SHA256SUMS.txt"
 
 mv -f "$staging_dir/$archive_name" "$release_dir/$archive_name"
 mv -f "$staging_dir/SHA256SUMS.txt" "$release_dir/SHA256SUMS.txt"
