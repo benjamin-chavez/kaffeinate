@@ -3,41 +3,32 @@ RELEASE_DIR ?= dist
 INSTALL_DIR ?= $(HOME)/Applications
 BIN_DIR ?= $(HOME)/.local/bin
 
-.PHONY: build release install test vet
+.PHONY: build release release-check release-draft install test vet
 
+# Build the app bundle for the current Mac architecture.
 build:
-	@test "$$(uname -s)" = Darwin || { echo "The application currently builds on macOS."; exit 1; }
-	rm -rf "$(APP_BUNDLE)"
-	mkdir -p "$(APP_BUNDLE)/Contents/MacOS" "$(APP_BUNDLE)/Contents/Resources/bin"
-	CGO_ENABLED=1 go build -trimpath -o "$(APP_BUNDLE)/Contents/MacOS/Kaffeinate" ./cmd/kaffeinate-app
-	CGO_ENABLED=0 go build -trimpath -o "$(APP_BUNDLE)/Contents/Resources/bin/kaffeinate" ./cmd/kaffeinate
-	cp packaging/macos/Info.plist "$(APP_BUNDLE)/Contents/Info.plist"
-	go run ./tools/icons "$(APP_BUNDLE)/Contents/Resources/Kaffeinate.icns"
-	plutil -lint "$(APP_BUNDLE)/Contents/Info.plist"
+	bash scripts/build.sh "$(APP_BUNDLE)"
 
+# Package the app and CLI for Apple Silicon and Intel Macs.
 release:
 	bash scripts/release.sh "$(RELEASE_DIR)"
 
+# Build and verify the release archive and extracted app.
+release-check:
+	bash scripts/release-workflow.sh check "$(RELEASE_DIR)"
+
+# Build, verify, and upload a draft release to GitHub.
+release-draft:
+	bash scripts/release-workflow.sh draft "$(RELEASE_DIR)"
+
+# Build and install the app, then link its CLI.
 install: build
-	@case "$(INSTALL_DIR)" in /*) ;; *) echo "INSTALL_DIR must be an absolute path."; exit 1;; esac
-	@case "$(BIN_DIR)" in /*) ;; *) echo "BIN_DIR must be an absolute path."; exit 1;; esac
-	@set -e; \
-	target="$(INSTALL_DIR)/Kaffeinate.app"; \
-	if [ -e "$$target" ] || [ -L "$$target" ]; then \
-		test ! -L "$$target" && test "$$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$$target/Contents/Info.plist")" = local.kaffeinate.app || { echo "The destination is not a Kaffeinate application bundle."; exit 1; }; \
-	fi; \
-	if [ -e "$(BIN_DIR)/kaffeinate" ] && [ ! -L "$(BIN_DIR)/kaffeinate" ]; then echo "A non-symlink kaffeinate command already exists in BIN_DIR."; exit 1; fi; \
-	mkdir -p "$(INSTALL_DIR)" "$(BIN_DIR)"; \
-	staging="$$(mktemp -d "$(INSTALL_DIR)/.kaffeinate-install.XXXXXX")"; \
-	trap 'rm -rf "$$staging"' EXIT; \
-	cp -R "$(APP_BUNDLE)" "$$staging/Kaffeinate.app"; \
-	rm -rf "$$target"; \
-	mv "$$staging/Kaffeinate.app" "$$target"; \
-	ln -sfn "$$target/Contents/Resources/bin/kaffeinate" "$(BIN_DIR)/kaffeinate"; \
-	echo "Installed $$target and $(BIN_DIR)/kaffeinate"
+	bash scripts/install.sh "$(APP_BUNDLE)" "$(INSTALL_DIR)" "$(BIN_DIR)"
 
+# Run the Go tests with the race detector enabled.
 test:
-	go test -race ./...
+	bash scripts/test.sh
 
+# Check the Go code for likely mistakes.
 vet:
-	go vet ./...
+	bash scripts/vet.sh

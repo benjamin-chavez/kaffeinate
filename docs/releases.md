@@ -2,7 +2,25 @@
 
 Releases contain one universal `Kaffeinate.app` for Apple Silicon and Intel Macs, including its precompiled CLI. Users need no Go installation or developer tools.
 
-The first release is v0.1.0. Publication follows review and merge of the release pull request.
+## Automated release preparation
+
+Quit Kaffeinate from its menu, then run:
+
+```sh
+make release-check
+```
+
+This builds the universal app, runs the tests and `go vet`, extracts the ZIP into a temporary path containing spaces, and runs the archive and packaged-app checks. It stops on errors or skipped top-level integration checks and removes the temporary extraction afterward. Architecture checks can still skip when the host cannot run that architecture; review those messages before distributing the app.
+
+To also upload a draft release, install and authenticate the GitHub CLI, update both version fields in `packaging/macos/Info.plist`, and merge those changes. From a clean checkout of the latest `main` commit on GitHub, run:
+
+```sh
+make release-draft
+```
+
+The command runs the same build and checks, reads the version from `CFBundleShortVersionString`, and uploads the ZIP and checksum to a new draft with generated release notes. It refuses an existing release or tag for that version. It prints the commands to review and publish the draft; publication remains a separate step.
+
+Both commands accept `RELEASE_DIR="/absolute/path with spaces"`. Build output remains gitignored; uploaded files are GitHub Release attachments, outside the repository's tracked files and commit history. `make release` still only builds the ZIP and checksum. The steps below are available for running the process manually.
 
 ## Build
 
